@@ -81,6 +81,12 @@ struct Args {
     #[arg(long, value_name = "MILLIS")]
     ymax: Option<f64>,
 
+    /// Smooth the graph with an exponential moving average spanning roughly this many samples.
+    /// Higher values give a flatter line that reacts more slowly. The header stats are always
+    /// computed from the raw samples.
+    #[arg(long, value_name = "SAMPLES")]
+    smooth: Option<u32>,
+
     /// Vertical margin around the graph (top and bottom)
     #[arg(long, default_value = "1")]
     vertical_margin: u16,
@@ -161,11 +167,11 @@ impl App {
 
         // Find the Y axis bounds for our chart.
         // This is trickier than the x-axis. We iterate through all our PlotData structs
-        // and find the min/max of all the values. Then we add a 10% buffer to them.
+        // and find the min/max of the values we are about to plot. Then we add a 10% buffer.
         let (min, max) = match self
             .data
             .iter()
-            .flat_map(|b| b.data.as_slice())
+            .flat_map(|b| b.plot_points())
             .map(|v| v.1)
             .filter(|v| !v.is_nan())
             .minmax()
@@ -249,12 +255,23 @@ impl App {
 mod tests {
     use super::*;
 
-    fn app_with(values: &[f64], y_min: Option<f64>, y_max: Option<f64>) -> App {
-        let mut plot = PlotData::new("test".to_string(), 30, Style::default(), false);
+    fn plot_with(values: &[Option<f64>], smoothing_alpha: Option<f64>) -> PlotData {
+        let mut plot = PlotData::new(
+            "test".to_string(),
+            30,
+            Style::default(),
+            false,
+            smoothing_alpha,
+        );
         for value in values {
-            plot.update(Some(Duration::from_micros(*value as u64)));
+            plot.update(value.map(|v| Duration::from_micros(v as u64)));
         }
-        App::new(vec![plot], 30, y_min, y_max)
+        plot
+    }
+
+    fn app_with(values: &[f64], y_min: Option<f64>, y_max: Option<f64>) -> App {
+        let samples: Vec<Option<f64>> = values.iter().map(|v| Some(*v)).collect();
+        App::new(vec![plot_with(&samples, None)], 30, y_min, y_max)
     }
 
     #[test]
@@ -301,14 +318,53 @@ mod tests {
 
     #[test]
     fn out_of_range_points_are_clamped_to_the_bounds() {
-        let mut plot = PlotData::new("test".to_string(), 30, Style::default(), false);
-        plot.update(Some(Duration::from_micros(500)));
-        plot.update(None);
-        plot.update(Some(Duration::from_micros(80_000)));
+        let plot = plot_with(&[Some(500f64), None, Some(80_000f64)], None);
         let clamped = plot.clamped_data([8_000f64, 50_000f64]);
         assert_eq!(clamped[0].1, 8_000f64);
         assert!(clamped[1].1.is_nan());
         assert_eq!(clamped[2].1, 50_000f64);
+    }
+
+    #[test]
+    fn raw_samples_are_plotted_without_smoothing() {
+        let plot = plot_with(&[Some(1_000f64), Some(3_000f64)], None);
+        let values: Vec<f64> = plot.plot_points().iter().map(|(_, v)| *v).collect();
+        assert_eq!(values, vec![1_000f64, 3_000f64]);
+    }
+
+    #[test]
+    fn smoothing_seeds_on_the_first_sample_and_averages_the_rest() {
+        // alpha = 0.5: every point is the midpoint between the sample and the previous average.
+        let plot = plot_with(&[Some(1_000f64), Some(3_000f64), Some(3_000f64)], Some(0.5));
+        let values: Vec<f64> = plot.plot_points().iter().map(|(_, v)| *v).collect();
+        assert_eq!(values, vec![1_000f64, 2_000f64, 2_500f64]);
+        // The header stats keep working off the raw samples.
+        assert_eq!(
+            plot.data.iter().map(|(_, v)| *v).collect::<Vec<f64>>(),
+            vec![1_000f64, 3_000f64, 3_000f64]
+        );
+    }
+
+    #[test]
+    fn smoothing_leaves_a_gap_on_timeouts_and_resumes_afterwards() {
+        let plot = plot_with(&[Some(1_000f64), None, Some(3_000f64)], Some(0.5));
+        let values: Vec<f64> = plot.plot_points().iter().map(|(_, v)| *v).collect();
+        assert_eq!(values[0], 1_000f64);
+        assert!(values[1].is_nan());
+        // The timeout did not reset nor feed the average: it carries on from 1_000.
+        assert_eq!(values[2], 2_000f64);
+    }
+
+    #[test]
+    fn smoothed_bounds_follow_the_plotted_line() {
+        let app = App::new(
+            vec![plot_with(&[Some(1_000f64), Some(3_000f64)], Some(0.5))],
+            30,
+            None,
+            None,
+        );
+        // Plotted values are 1_000 and 2_000, not the raw 3_000 spike.
+        assert_eq!(app.y_axis_bounds(), [900f64, 2_200f64]);
     }
 }
 
@@ -488,6 +544,14 @@ fn main() -> Result<()> {
         }
     }
 
+    // Convert the sample count to the smoothing factor of the moving average, using the usual
+    // `2 / (N + 1)` equivalence with a simple moving average of N samples.
+    let smoothing_alpha = match args.smooth {
+        Some(0) => return Err(anyhow!("--smooth must be 1 or more")),
+        Some(samples) => Some(2f64 / (samples as f64 + 1f64)),
+        None => None,
+    };
+
     let mut data = vec![];
 
     let colors = Colors::from(args.color_codes_or_names.iter());
@@ -516,6 +580,7 @@ fn main() -> Result<()> {
             args.buffer,
             Style::default().fg(color),
             args.simple_graphics,
+            smoothing_alpha,
         ));
     }
 

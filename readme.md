@@ -106,6 +106,8 @@ Options:
           Fix the bottom of the Y axis at this value, in milliseconds. Lower values are drawn clamped to the bottom of the graph
       --ymax <MILLIS>
           Fix the top of the Y axis at this value, in milliseconds. Higher values are drawn clamped to the top of the graph
+      --smooth <SAMPLES>
+          Smooth the graph with an exponential moving average spanning roughly this many samples. Higher values give a flatter line that reacts more slowly. The header stats are always computed from the raw samples
       --vertical-margin <VERTICAL_MARGIN>
           Vertical margin around the graph (top and bottom) [default: 1]
       --horizontal-margin <HORIZONTAL_MARGIN>

@@ -4,7 +4,7 @@
 .SH NAME
 gping \- Ping, but with a graph.
 .SH SYNOPSIS
-\fBgping\fR [\fB\-\-cmd\fR] [\fB\-n\fR|\fB\-\-watch\-interval\fR] [\fB\-b\fR|\fB\-\-buffer\fR] [\fB\-4 \fR] [\fB\-6 \fR] [\fB\-i\fR|\fB\-\-interface\fR] [\fB\-s\fR|\fB\-\-simple\-graphics\fR] [\fB\-\-ymin\fR] [\fB\-\-ymax\fR] [\fB\-\-vertical\-margin\fR] [\fB\-\-horizontal\-margin\fR] [\fB\-c\fR|\fB\-\-color\fR] [\fB\-\-clear\fR] [\fB\-\-ping\-args\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIHOSTS_OR_COMMANDS\fR] 
+\fBgping\fR [\fB\-\-cmd\fR] [\fB\-n\fR|\fB\-\-watch\-interval\fR] [\fB\-b\fR|\fB\-\-buffer\fR] [\fB\-4 \fR] [\fB\-6 \fR] [\fB\-i\fR|\fB\-\-interface\fR] [\fB\-s\fR|\fB\-\-simple\-graphics\fR] [\fB\-\-ymin\fR] [\fB\-\-ymax\fR] [\fB\-\-smooth\fR] [\fB\-\-vertical\-margin\fR] [\fB\-\-horizontal\-margin\fR] [\fB\-c\fR|\fB\-\-color\fR] [\fB\-\-clear\fR] [\fB\-\-ping\-args\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIHOSTS_OR_COMMANDS\fR] 
 .SH DESCRIPTION
 Ping, but with a graph.
 .SH OPTIONS
@@ -35,6 +35,9 @@ Fix the bottom of the Y axis at this value, in milliseconds. Lower values are dr
 .TP
 \fB\-\-ymax\fR \fI<MILLIS>\fR
 Fix the top of the Y axis at this value, in milliseconds. Higher values are drawn clamped to the top of the graph
+.TP
+\fB\-\-smooth\fR \fI<SAMPLES>\fR
+Smooth the graph with an exponential moving average spanning roughly this many samples. Higher values give a flatter line that reacts more slowly. The header stats are always computed from the raw samples
 .TP
 \fB\-\-vertical\-margin\fR \fI<VERTICAL_MARGIN>\fR [default: 1]
 Vertical margin around the graph (top and bottom)

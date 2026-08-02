@@ -14,10 +14,22 @@ pub struct PlotData {
     pub style: Style,
     buffer: chrono::Duration,
     simple_graphics: bool,
+    /// Weight given to the newest sample by the exponential moving average, if smoothing is on.
+    smoothing_alpha: Option<f64>,
+    /// The smoothed counterpart of `data`, kept in step with it. Empty when smoothing is off.
+    smoothed: Vec<(f64, f64)>,
+    /// Last smoothed value, carried over timeouts.
+    ema: Option<f64>,
 }
 
 impl PlotData {
-    pub fn new(display: String, buffer: u64, style: Style, simple_graphics: bool) -> PlotData {
+    pub fn new(
+        display: String,
+        buffer: u64,
+        style: Style,
+        simple_graphics: bool,
+        smoothing_alpha: Option<f64>,
+    ) -> PlotData {
         PlotData {
             display,
             data: Vec::with_capacity(150),
@@ -26,14 +38,36 @@ impl PlotData {
                 .with_context(|| format!("Error converting {buffer} to seconds"))
                 .unwrap(),
             simple_graphics,
+            smoothing_alpha,
+            smoothed: Vec::new(),
+            ema: None,
         }
     }
     pub fn update(&mut self, item: Option<Duration>) {
         let now = Local::now();
         let idx = now.timestamp_millis() as f64 / 1_000f64;
-        match item {
-            Some(dur) => self.data.push((idx, dur.as_micros() as f64)),
-            None => self.data.push((idx, f64::NAN)),
+        let value = match item {
+            Some(dur) => dur.as_micros() as f64,
+            None => f64::NAN,
+        };
+        self.data.push((idx, value));
+        if let Some(alpha) = self.smoothing_alpha {
+            // A timeout carries no round trip time, so the average is left frozen and the gap is
+            // kept in the plotted line rather than being bridged over.
+            if !value.is_nan() {
+                self.ema = Some(match self.ema {
+                    Some(previous) => alpha * value + (1f64 - alpha) * previous,
+                    None => value,
+                });
+            }
+            self.smoothed.push((
+                idx,
+                if value.is_nan() {
+                    f64::NAN
+                } else {
+                    self.ema.unwrap()
+                },
+            ));
         }
         // Find the last index that we should remove.
         let earliest_timestamp = (now - self.buffer).timestamp_millis() as f64 / 1_000f64;
@@ -45,16 +79,29 @@ impl PlotData {
             .map(|(idx, _)| idx)
             .next_back();
         if let Some(idx) = last_idx {
-            self.data.drain(0..idx).for_each(drop)
+            self.data.drain(0..idx).for_each(drop);
+            if !self.smoothed.is_empty() {
+                self.smoothed.drain(0..idx).for_each(drop);
+            }
         }
     }
 
-    /// The data points with their values pulled inside `bounds`. The chart widget simply drops
+    /// The points that end up on the graph: the smoothed series when smoothing is on, the raw
+    /// samples otherwise. The header stats always use the raw samples.
+    pub fn plot_points(&self) -> &[(f64, f64)] {
+        if self.smoothing_alpha.is_some() {
+            self.smoothed.as_slice()
+        } else {
+            self.data.as_slice()
+        }
+    }
+
+    /// The plotted points with their values pulled inside `bounds`. The chart widget simply drops
     /// anything outside of the axis bounds, so clamping keeps out-of-range replies visible as a
     /// line running along the top or the bottom of the graph. Timeouts stay `NaN`.
     pub fn clamped_data(&self, bounds: [f64; 2]) -> Vec<(f64, f64)> {
         let [lower, upper] = bounds;
-        self.data
+        self.plot_points()
             .iter()
             .map(|&(timestamp, value)| (timestamp, value.clamp(lower, upper)))
             .collect()
@@ -113,7 +160,7 @@ impl PlotData {
 
 impl<'a> From<&'a PlotData> for Dataset<'a> {
     fn from(plot: &'a PlotData) -> Self {
-        let slice = plot.data.as_slice();
+        let slice = plot.plot_points();
         Dataset::default()
             .marker(if plot.simple_graphics {
                 symbols::Marker::Dot
