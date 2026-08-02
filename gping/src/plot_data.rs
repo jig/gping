@@ -49,6 +49,17 @@ impl PlotData {
         }
     }
 
+    /// The data points with their values pulled inside `bounds`. The chart widget simply drops
+    /// anything outside of the axis bounds, so clamping keeps out-of-range replies visible as a
+    /// line running along the top or the bottom of the graph. Timeouts stay `NaN`.
+    pub fn clamped_data(&self, bounds: [f64; 2]) -> Vec<(f64, f64)> {
+        let [lower, upper] = bounds;
+        self.data
+            .iter()
+            .map(|&(timestamp, value)| (timestamp, value.clamp(lower, upper)))
+            .collect()
+    }
+
     pub fn header_stats(&self) -> Vec<Paragraph<'_>> {
         let ping_header = Paragraph::new(self.display.clone()).style(self.style);
         let items: Vec<&f64> = self

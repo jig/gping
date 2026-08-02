@@ -102,6 +102,10 @@ Options:
           Interface to use when pinging
   -s, --simple-graphics
           Uses dot characters instead of braille
+      --ymin <MILLIS>
+          Fix the bottom of the Y axis at this value, in milliseconds. Lower values are drawn clamped to the bottom of the graph
+      --ymax <MILLIS>
+          Fix the top of the Y axis at this value, in milliseconds. Higher values are drawn clamped to the top of the graph
       --vertical-margin <VERTICAL_MARGIN>
           Vertical margin around the graph (top and bottom) [default: 1]
       --horizontal-margin <HORIZONTAL_MARGIN>
